@@ -1,0 +1,15 @@
+{
+  "name": "ixb-ports",
+  "private": true,
+  "type": "module",
+  "description": "把 Clash 订阅的每个节点变成一个本机 SOCKS5 端口，供 ixBrowser 粘贴使用",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

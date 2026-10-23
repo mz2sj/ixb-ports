@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>节点端口</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1c2430;
+      --muted: #5c6775;
+      --line: #d5dbe3;
+      --paper: #f3f5f7;
+      --card: #fff;
+      --accent: #163a5f;
+      --accent-ink: #fff;
+      --bad-bg: #fdecec;
+      --bad-ink: #8c1d1d;
+      --ok: #0f6b45;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+    }
+    main {
+      width: min(1080px, calc(100% - 32px));
+      margin: 28px auto 48px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+    .sub {
+      margin: 6px 0 0;
+      color: var(--muted);
+    }
+    .card {
+      margin-top: 18px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    form {
+      display: flex;
+      gap: 8px;
+      padding: 14px;
+    }
+    input[type="url"], input[type="search"] {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      color: inherit;
+      background: #fff;
+    }
+    input:focus, button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    button {
+      border: 0;
+      border-radius: 6px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font: inherit;
+      padding: 8px 12px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.55; cursor: default; }
+    button.ghost {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid var(--line);
+    }
+    .hint, .meta {
+      padding: 0 14px 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .status {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .pill {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .pill.on { color: var(--ok); }
+    .error {
+      margin: 12px 14px 0;
+      padding: 10px 12px;
+      background: var(--bad-bg);
+      color: var(--bad-ink);
+      border-radius: 6px;
+      white-space: pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    .tools {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 12px 14px;
+    }
+    .tools input { max-width: 320px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      text-align: left;
+      padding: 9px 12px;
+      border-top: 1px solid var(--line);
+      vertical-align: middle;
+    }
+    th { font-size: 12px; color: var(--muted); font-weight: 600; }
+    tr:hover td { background: #f7f9fb; }
+    .socks {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    .empty { padding: 28px 14px 32px; color: var(--muted); }
+    button.copy { padding: 5px 10px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>节点端口</h1>
+    <p class="sub">每个 Clash 节点对应一个本机 SOCKS5 端口。点复制，得到 127.0.0.1:42001 这种地址，粘进 ixBrowser 的添加框。</p>
+
+    <section class="card">
+      <form id="form">
+        <input id="url" type="url" placeholder="https://example.com/clash.yaml" autocomplete="off" spellcheck="false" required>
+        <button id="go" type="submit">拉取并启动</button>
+      </form>
+      <p class="hint">这个页面背后的服务要一直开着。关掉终端后，ixBrowser 里的代理会断开。再次拉取时，同一个节点仍使用原来的端口。</p>
+    </section>
+
+    <section class="card" style="margin-top: 14px;">
+      <div class="status">
+        <div>
+          <strong id="summary">还没有节点</strong>
+          <div class="meta" id="when" style="padding: 4px 0 0;"></div>
+        </div>
+        <div class="pill" id="pill">未启动</div>
+      </div>
+      <div id="error" class="error" hidden></div>
+      <div class="tools">
+        <input id="q" type="search" placeholder="筛选节点名、类型、服务器">
+        <button id="copyAll" class="ghost" type="button">复制当前列表</button>
+      </div>
+      <div id="empty" class="empty">贴上订阅链接，点「拉取并启动」。</div>
+      <table id="table" hidden>
+        <thead>
+          <tr>
+            <th>节点</th>
+            <th>类型</th>
+            <th>服务器</th>
+            <th>本地地址</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </main>
+  <script>
+    const urlInput = document.querySelector('#url');
+    const form = document.querySelector('#form');
+    const go = document.querySelector('#go');
+    const summary = document.querySelector('#summary');
+    const when = document.querySelector('#when');
+    const pill = document.querySelector('#pill');
+    const errorBox = document.querySelector('#error');
+    const q = document.querySelector('#q');
+    const rows = document.querySelector('#rows');
+    const table = document.querySelector('#table');
+    const empty = document.querySelector('#empty');
+    const copyAll = document.querySelector('#copyAll');
+    let current = { nodes: [] };
+    let hydrated = false;
+    let lastKey = '';
+
+    function visibleNodes() {
+      const query = q.value.trim().toLowerCase();
+      if (!query) return current.nodes;
+      return current.nodes.filter((node) =>
+        `${node.name} ${node.type} ${node.server} ${node.serverPort} ${node.localPort}`.toLowerCase().includes(query));
+    }
+
+    async function copyText(text) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+      } catch { /* 嵌入式浏览器可能拒绝剪贴板，改用选中复制 */ }
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.left = '-9999px';
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      area.remove();
+    }
+
+    function markCopied(button) {
+      const previous = button.textContent;
+      button.textContent = '已复制';
+      setTimeout(() => { button.textContent = previous; }, 1200);
+    }
+
+    function render() {
+      const key = JSON.stringify({
+        nodes: current.nodes,
+        running: current.running,
+        error: current.error,
+        skipped: current.skipped,
+        q: q.value,
+      });
+      if (key === lastKey) return;
+      lastKey = key;
+      const nodes = visibleNodes();
+      const running = Boolean(current.running);
+      pill.textContent = running ? '运行中' : '未启动';
+      pill.classList.toggle('on', running);
+      const skipped = current.skipped || [];
+      if (!current.nodes.length) {
+        summary.textContent = '还没有节点';
+      } else if (running) {
+        summary.textContent = `${current.nodes.length} 个节点在听${skipped.length ? `，跳过 ${skipped.length} 个无效节点` : ''}`;
+      } else {
+        summary.textContent = `配置里有 ${current.nodes.length} 个节点，服务还没在听`;
+      }
+      when.textContent = current.updatedAt
+        ? `更新于 ${new Date(current.updatedAt).toLocaleString('zh-CN', { hour12: false })}`
+        : '';
+      errorBox.hidden = !current.error;
+      errorBox.textContent = current.error || '';
+      empty.hidden = nodes.length > 0;
+      table.hidden = nodes.length === 0;
+      empty.textContent = current.nodes.length ? '没有匹配的节点。' : '贴上订阅链接，点「拉取并启动」。';
+      rows.replaceChildren();
+      for (const node of nodes) {
+        const tr = document.createElement('tr');
+        const name = document.createElement('td');
+        name.textContent = node.name;
+        const type = document.createElement('td');
+        type.textContent = node.type;
+        const server = document.createElement('td');
+        server.textContent = `${node.server}:${node.serverPort}`;
+        const socks = document.createElement('td');
+        socks.className = 'socks';
+        socks.textContent = node.socks;
+        const action = document.createElement('td');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'copy';
+        button.textContent = '复制';
+        button.addEventListener('click', async () => {
+          await copyText(node.socks);
+          markCopied(button);
+        });
+        action.appendChild(button);
+        tr.append(name, type, server, socks, action);
+        rows.appendChild(tr);
+      }
+    }
+
+    async function load() {
+      const response = await fetch('/api/state');
+      current = await response.json();
+      if (!hydrated) {
+        if (current.url) urlInput.value = current.url;
+        hydrated = true;
+      }
+      render();
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      go.disabled = true;
+      go.textContent = '正在启动…';
+      errorBox.hidden = true;
+      try {
+        const response = await fetch('/api/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: urlInput.value.trim() }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          current = { ...current, ...data, error: data.error || '启动失败' };
+          render();
+          return;
+        }
+        current = data;
+        render();
+      } catch (error) {
+        current = { ...current, error: error.message };
+        render();
+      } finally {
+        go.disabled = false;
+        go.textContent = '拉取并启动';
+      }
+    });
+
+    q.addEventListener('input', render);
+    copyAll.addEventListener('click', async () => {
+      const text = visibleNodes().map((node) => node.socks).join('\n');
+      if (!text) return;
+      await copyText(text);
+      markCopied(copyAll);
+    });
+
+    load().catch((error) => {
+      current = { nodes: [], error: error.message, running: false, skipped: [] };
+      render();
+    });
+    setInterval(() => { load().catch(() => {}); }, 4000);
+  </script>
+</body>
+</html>
