@@ -117,8 +117,15 @@ export function assignPorts(nodes, saved) {
     node.socks = `127.0.0.1:${port}`;
   }
 
-  nodes.sort((a, b) => a.localPort - b.localPort);
+  nodes.sort(compareNodes);
   return { map, next };
+}
+
+export function compareNodes(a, b) {
+  const aIsp = String(a.name).toUpperCase().includes('ISP') ? 0 : 1;
+  const bIsp = String(b.name).toUpperCase().includes('ISP') ? 0 : 1;
+  if (aIsp !== bIsp) return aIsp - bIsp;
+  return a.localPort - b.localPort;
 }
 
 export function buildRuntime(nodes) {

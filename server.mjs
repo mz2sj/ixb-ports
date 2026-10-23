@@ -8,6 +8,7 @@ import {
   SECRET,
   assignPorts,
   buildRuntime,
+  compareNodes,
   decodeSubscription,
   prepareProxies,
   publicNode,
@@ -266,7 +267,7 @@ function state() {
     nodes: (snapshot.nodes || []).map((node) => ({
       ...node,
       socks: `127.0.0.1:${node.localPort}`,
-    })),
+    })).sort(compareNodes),
   };
 }
 

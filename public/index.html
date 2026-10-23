@@ -192,9 +192,17 @@
 
     function visibleNodes() {
       const query = q.value.trim().toLowerCase();
-      if (!query) return current.nodes;
-      return current.nodes.filter((node) =>
-        `${node.name} ${node.type} ${node.server} ${node.serverPort} ${node.localPort}`.toLowerCase().includes(query));
+      const nodes = !query
+        ? current.nodes.slice()
+        : current.nodes.filter((node) =>
+          `${node.name} ${node.type} ${node.server} ${node.serverPort} ${node.localPort}`.toLowerCase().includes(query));
+      nodes.sort((a, b) => {
+        const aIsp = String(a.name).toUpperCase().includes('ISP') ? 0 : 1;
+        const bIsp = String(b.name).toUpperCase().includes('ISP') ? 0 : 1;
+        if (aIsp !== bIsp) return aIsp - bIsp;
+        return a.localPort - b.localPort;
+      });
+      return nodes;
     }
 
     async function copyText(text) {
