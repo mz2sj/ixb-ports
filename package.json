@@ -4,7 +4,8 @@
   "type": "module",
   "description": "把 Clash 订阅的每个节点变成一个本机 SOCKS5 端口，供 ixBrowser 粘贴使用",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "test": "node --test"
   },
   "dependencies": {
     "yaml": "^2.7.0"

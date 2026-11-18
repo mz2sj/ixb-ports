@@ -10,6 +10,7 @@ import {
   buildRuntime,
   compareNodes,
   decodeSubscription,
+  ispUpstream,
   prepareProxies,
   publicNode,
 } from './lib.mjs';
@@ -240,19 +241,24 @@ async function applySubscription(rawUrl) {
   const body = await fetchSubscription(url);
   const { nodes, skipped } = prepareProxies(decodeSubscription(body));
   if (!nodes.length) throw new Error('订阅里没有可用节点');
-  portMap = assignPorts(nodes, portMap);
+  const nextPortMap = assignPorts(nodes, portMap, snapshot.nodes);
+  const upstream = ispUpstream(nodes);
   fs.writeFileSync(NEXT_FILE, buildRuntime(nodes), { mode: 0o600 });
   testConfig(NEXT_FILE);
   fs.renameSync(NEXT_FILE, RUNTIME_FILE);
 
   const updatedAt = new Date().toISOString();
-  snapshot = { updatedAt, skipped, nodes: nodes.map(publicNode) };
+  portMap = nextPortMap;
+  snapshot = {
+    updatedAt, skipped, nodes: nodes.map(publicNode),
+    upstream: upstream ? { group: upstream.name, candidateCount: upstream.candidates.length } : null,
+  };
   settings.updatedAt = updatedAt;
   writeJson(PORTS_FILE, portMap);
   writeJson(NODES_FILE, snapshot);
   writeJson(SETTINGS_FILE, settings);
   await startMihomo();
-  return state();
+  return stateWithUpstream();
 }
 
 function state() {
@@ -264,11 +270,39 @@ function state() {
     updatedAt: snapshot.updatedAt || '',
     skipped: snapshot.skipped || [],
     mihomo: MIHOMO || '',
+    upstream: snapshot.upstream || null,
     nodes: (snapshot.nodes || []).map((node) => ({
       ...node,
       socks: `127.0.0.1:${node.localPort}`,
     })).sort(compareNodes),
   };
+}
+
+async function stateWithUpstream() {
+  const current = state();
+  if (!current.running || !current.upstream) return current;
+  try {
+    const request = async (name) => {
+      const response = await fetch(`http://${CONTROLLER}/proxies/${encodeURIComponent(name)}`, {
+        headers: { Authorization: `Bearer ${SECRET}` },
+        signal: AbortSignal.timeout(800),
+      });
+      if (!response.ok) throw new Error('前置测速状态暂不可用');
+      return response.json();
+    };
+    const group = await request(current.upstream.group);
+    if (!group.now) return current;
+    const selected = await request(group.now);
+    const last = selected.history?.slice(-1)[0];
+    current.upstream = {
+      ...current.upstream,
+      selected: group.now,
+      delay: last?.delay > 0 ? last.delay : null,
+      available: selected.alive !== false,
+      checkedAt: last?.time || null,
+    };
+  } catch { /* Keep serving node ports when the controller is temporarily busy. */ }
+  return current;
 }
 
 function sendJson(res, code, body) {
@@ -307,7 +341,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/state') {
-      sendJson(res, 200, state());
+      sendJson(res, 200, await stateWithUpstream());
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/subscribe') {

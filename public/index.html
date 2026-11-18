@@ -150,6 +150,7 @@
         <div>
           <strong id="summary">还没有节点</strong>
           <div class="meta" id="when" style="padding: 4px 0 0;"></div>
+          <div class="meta" id="upstream" style="padding: 4px 0 0;" hidden></div>
         </div>
         <div class="pill" id="pill">未启动</div>
       </div>
@@ -179,6 +180,7 @@
     const go = document.querySelector('#go');
     const summary = document.querySelector('#summary');
     const when = document.querySelector('#when');
+    const upstream = document.querySelector('#upstream');
     const pill = document.querySelector('#pill');
     const errorBox = document.querySelector('#error');
     const q = document.querySelector('#q');
@@ -235,6 +237,7 @@
         running: current.running,
         error: current.error,
         skipped: current.skipped,
+        upstream: current.upstream,
         q: q.value,
       });
       if (key === lastKey) return;
@@ -253,6 +256,11 @@
       }
       when.textContent = current.updatedAt
         ? `更新于 ${new Date(current.updatedAt).toLocaleString('zh-CN', { hour12: false })}`
+        : '';
+      const front = current.upstream;
+      upstream.hidden = !front;
+      upstream.textContent = front
+        ? `ISP 美国前置：${front.selected || '测速中'}${front.delay ? ` · ${front.delay} ms` : ''}${front.available === false ? ' · 当前探测失败，正在重选' : ''}（${front.candidateCount} 个候选，每 30 秒复测，超时自动切换）`
         : '';
       errorBox.hidden = !current.error;
       errorBox.textContent = current.error || '';

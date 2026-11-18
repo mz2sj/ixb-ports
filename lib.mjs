@@ -94,14 +94,23 @@ function validPort(port) {
   return Number.isInteger(port) && port >= BASE_PORT && port <= 65535;
 }
 
-export function assignPorts(nodes, saved) {
+export function assignPorts(nodes, saved, previousNodes = []) {
   const map = { ...(saved && saved.map) };
   let next = validPort(saved && saved.next) ? saved.next : BASE_PORT;
   const reserved = new Set(Object.values(map).filter(validPort));
   const usedThisRun = new Set();
+  const previousByName = new Map();
+  for (const node of previousNodes) {
+    // Ambiguous names must continue using the full identity instead.
+    previousByName.set(node.name, previousByName.has(node.name) ? null : node);
+  }
 
   for (const node of nodes) {
     let port = map[node.identity];
+    const previous = previousByName.get(node.name);
+    if (previous?.type === node.type && validPort(previous.localPort)) {
+      port = previous.localPort;
+    }
     if (!validPort(port) || usedThisRun.has(port)) {
       while (reserved.has(next) || usedThisRun.has(next)) {
         next += 1;
@@ -112,6 +121,7 @@ export function assignPorts(nodes, saved) {
       reserved.add(port);
       next += 1;
     }
+    map[node.identity] = port;
     usedThisRun.add(port);
     node.localPort = port;
     node.socks = `127.0.0.1:${port}`;
@@ -128,7 +138,38 @@ export function compareNodes(a, b) {
   return a.localPort - b.localPort;
 }
 
+function chainedIsp(node) {
+  return /ISP/i.test(node.name) && Boolean(node.proxy['dialer-proxy']);
+}
+
+export function ispUpstream(nodes) {
+  if (!nodes.some(chainedIsp)) return null;
+  const us = /美国|美國|🇺🇸|United States|\bUSA?\b|New York|Los Angeles|Chicago|Atlanta|Miami|Dallas|Washington|Seattle|San Jose\b|圣何塞|西雅图|洛杉矶|纽约/i;
+  const costaRica = /🇨🇷|Costa\s*Rica|哥斯[达大]黎加/i;
+  const candidates = nodes
+    .filter((node) => us.test(node.name) && !costaRica.test(node.name) && !/ISP/i.test(node.name) && !node.proxy['dialer-proxy'])
+    .map((node) => node.name);
+  if (!candidates.length) throw new Error('ISP 前置组没有可用的美国候选节点；需要至少一个不带前置依赖的美国 VPN 节点。');
+  const names = new Set(nodes.map((node) => node.name));
+  const base = 'IXB·美国前置自动选择';
+  let name = base;
+  for (let n = 2; names.has(name); n += 1) name = `${base} #${n}`;
+  return { name, candidates };
+}
+
 export function buildRuntime(nodes) {
+  const upstream = ispUpstream(nodes);
+  const proxies = nodes.map((node) => ({
+    ...node.proxy,
+    ...(upstream && chainedIsp(node) ? { 'dialer-proxy': upstream.name } : {}),
+  }));
+  const names = new Set([...nodes.map((node) => node.name), 'DIRECT', 'REJECT', 'COMPATIBLE']);
+  if (upstream) names.add(upstream.name);
+  for (const proxy of proxies) {
+    if (proxy['dialer-proxy'] && !names.has(proxy['dialer-proxy'])) {
+      throw new Error(`节点「${proxy.name}」引用了不存在的前置「${proxy['dialer-proxy']}」。请在订阅中提供对应节点；ISP 节点可自动使用美国前置组。`);
+    }
+  }
   const doc = {
     'allow-lan': false,
     'bind-address': '127.0.0.1',
@@ -138,7 +179,20 @@ export function buildRuntime(nodes) {
     'find-process-mode': 'off',
     'external-controller': CONTROLLER,
     secret: SECRET,
-    proxies: nodes.map((node) => node.proxy),
+    proxies,
+    ...(upstream ? {
+      'proxy-groups': [{
+        name: upstream.name,
+        type: 'url-test',
+        proxies: upstream.candidates,
+        url: 'https://www.gstatic.com/generate_204',
+        interval: 30,
+        timeout: 3000,
+        tolerance: 0,
+        lazy: false,
+        'max-failed-times': 1,
+      }],
+    } : {}),
     listeners: nodes.map((node) => ({
       name: `p${node.localPort}`,
       type: 'socks',
